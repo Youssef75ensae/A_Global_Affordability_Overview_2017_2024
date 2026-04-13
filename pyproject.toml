@@ -16,4 +16,5 @@ dependencies = [
     "pyyaml",
     "ruff",
     "scikit-learn",
+    "seaborn>=0.13.2",
 ]
