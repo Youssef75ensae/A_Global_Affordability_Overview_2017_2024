@@ -1,0 +1,59 @@
+# Two-step pipeline: Kaggle -> S3 CSV, then CSV -> Parquet -> cleaned Parquet on S3.
+# Build and push the image from repo root: docker build -t <registry>/affordability-pipeline:<tag> .
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: affordability-data-pipeline
+  namespace: affordability
+spec:
+  serviceAccountName: affordability-pipeline
+  entrypoint: data-pipeline
+  arguments:
+    parameters:
+      - name: image
+        value: affordability-pipeline:latest
+  templates:
+    - name: data-pipeline
+      steps:
+        - - name: ingest
+            template: ingest
+        - - name: preprocess
+            template: preprocess
+
+    - name: ingest
+      container:
+        image: "{{workflow.parameters.image}}"
+        imagePullPolicy: IfNotPresent
+        command: [python3]
+        args: [src/data/ingest_data.py]
+        envFrom:
+          - secretRef:
+              name: affordability-pipeline-secrets
+        env:
+          - name: CHEMIN_FICHIER
+            value: "data/price_of_healthy_diet_clean.csv"
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            memory: "2Gi"
+
+    - name: preprocess
+      container:
+        image: "{{workflow.parameters.image}}"
+        imagePullPolicy: IfNotPresent
+        command: [python3]
+        args: [src/data/data_preprocessing.py]
+        envFrom:
+          - secretRef:
+              name: affordability-pipeline-secrets
+        env:
+          - name: CHEMIN_FICHIER
+            value: "data/price_of_healthy_diet_clean.csv"
+        resources:
+          requests:
+            cpu: "500m"
+            memory: "1Gi"
+          limits:
+            memory: "4Gi"

@@ -5,6 +5,7 @@ description = 'This MLOps project operationalizes a Kaggle machine learning note
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "click>=8.0",
     "duckdb",
     "flake8",
     "kagglehub>=1.0.0",

@@ -33,13 +33,14 @@ def make_parquet(bucket: str, input_path: str, output_path: str = None) -> str:
 
 
 def load_data(path: str) -> duckdb.DuckDBPyRelation:
-    """Load dataset from Parquet entirely in DuckDB."""
+    """Load dataset from Parquet entirely in DuckDB (local path or s3://)."""
     logger = logging.getLogger(__name__)
-    path = Path(path)
-
-    logger.info(f"Loading data from {path}")
+    path_str = str(path)
+    logger.info(f"Loading data from {path_str}")
     con = duckdb.connect(":memory:")
-    rel = con.sql(f"SELECT * FROM read_parquet('{path}')")
+    if path_str.startswith("s3://"):
+        configure_s3(con)
+    rel = con.sql(f"SELECT * FROM read_parquet('{path_str}')")
 
     # Validation SQL
     row_count = rel.aggregate("count(*)").fetchone()[0]
@@ -48,14 +49,14 @@ def load_data(path: str) -> duckdb.DuckDBPyRelation:
         raise ValueError("Parquet is empty")
 
     cols = rel.columns
-    expected_cols = ["country", "year", "region", "costhealthydietpppusd"]
+    expected_cols = ["country", "year", "region", "cost_healthy_diet_ppp_usd"]
     missing_cols = [col for col in expected_cols if col not in cols]
     if missing_cols:
         logger.error(f"Missing required columns: {missing_cols}")
         raise ValueError(f"Missing columns: {missing_cols}")
 
     valid_rows = (
-        rel.filter("costhealthydietpppusd IS NOT NULL")
+        rel.filter("cost_healthy_diet_ppp_usd IS NOT NULL")
         .aggregate("count(*)")
         .fetchone()[0]
     )
@@ -75,7 +76,7 @@ def basic_overview(rel: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRelation:
             count(*) as rows,
             count(DISTINCT country) as unique_countries,
             count(DISTINCT region) as unique_regions,
-            sum(CASE WHEN costhealthydietpppusd IS NULL THEN 1 ELSE 0 END) as null_costs
+            sum(CASE WHEN cost_healthy_diet_ppp_usd IS NULL THEN 1 ELSE 0 END) as null_costs
         FROM {}
     """.format(rel)
     )
@@ -146,8 +147,8 @@ def region_consistency_check(rel: duckdb.DuckDBPyRelation) -> duckdb.DuckDBPyRel
 
 
 @click.command()
-@click.argument("input_filepath", type=click.Path(exists=True))
-@click.argument("output_filepath", type=click.Path())
+@click.argument("input_filepath", required=False)
+@click.argument("output_filepath", required=False)
 def main(input_filepath, output_filepath):
     """Run data processing pipeline entirely in DuckDB."""
     logger = logging.getLogger(__name__)
@@ -155,14 +156,31 @@ def main(input_filepath, output_filepath):
 
     logger.info("Starting data processing pipeline")
 
-    # S3 parquet conversion (optional)
     MY_BUCKET = os.getenv("MY_BUCKET")
-    if MY_BUCKET and os.getenv("CHEMIN_FICHIER"):
-        CHEMIN_FICHIER = os.getenv("CHEMIN_FICHIER")
+    CHEMIN_FICHIER = os.getenv("CHEMIN_FICHIER")
+    CHEMIN_PARQUET = None
+    if MY_BUCKET and CHEMIN_FICHIER:
         CHEMIN_PARQUET = os.getenv(
             "CHEMIN_PARQUET", CHEMIN_FICHIER.replace(".csv", ".parquet")
         )
         make_parquet(MY_BUCKET, CHEMIN_FICHIER, CHEMIN_PARQUET)
+
+    if not input_filepath and MY_BUCKET and CHEMIN_PARQUET:
+        input_filepath = f"s3://{MY_BUCKET}/{CHEMIN_PARQUET}"
+    if not input_filepath:
+        raise click.UsageError(
+            "Set MY_BUCKET and CHEMIN_FICHIER for S3 mode, or pass input parquet path."
+        )
+    if not output_filepath:
+        if MY_BUCKET:
+            output_filepath = os.getenv(
+                "OUTPUT_PARQUET_PATH",
+                f"s3://{MY_BUCKET}/processed/price_clean.parquet",
+            )
+        else:
+            output_filepath = os.getenv(
+                "OUTPUT_PARQUET_PATH", "/tmp/processed/price_clean.parquet"
+            )
 
     # Full pipeline in DuckDB
     rel = load_data(input_filepath)
@@ -177,10 +195,14 @@ def main(input_filepath, output_filepath):
 
     # Save final result
     output_path = Path(output_filepath)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if not str(output_filepath).startswith("s3://"):
+        output_path.parent.mkdir(parents=True, exist_ok=True)
 
     con = duckdb.connect()
-    con.sql(f"COPY ({rel_clean}) TO '{output_path}' (FORMAT PARQUET)")
+    if str(output_filepath).startswith("s3://"):
+        configure_s3(con)
+    out_sql = str(output_filepath).replace("'", "''")
+    con.sql(f"COPY ({rel_clean}) TO '{out_sql}' (FORMAT PARQUET)")
 
     row_count = rel_clean.aggregate("count(*)").fetchone()[0]
     logger.info(f"Saved {row_count:,} rows to {output_path}")

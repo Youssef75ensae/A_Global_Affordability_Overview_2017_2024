@@ -1,0 +1,24 @@
+# Weekly schedule (Monday 00:00 UTC), same cadence as .github/workflows/data_pipeline.yml
+apiVersion: argoproj.io/v1alpha1
+kind: CronWorkflow
+metadata:
+  name: affordability-data-pipeline-cron
+  namespace: affordability
+spec:
+  schedule: "0 0 * * 1"
+  timezone: "UTC"
+  concurrencyPolicy: "Replace"
+  startingDeadlineSeconds: 0
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  workflowSpec:
+    workflowTemplateRef:
+      name: affordability-data-pipeline
+    arguments:
+      parameters:
+        - name: image
+          value: affordability-pipeline:latest
+    ttlStrategy:
+      secondsAfterCompletion: 86400
+      secondsAfterSuccess: 86400
+      secondsAfterFailure: 604800

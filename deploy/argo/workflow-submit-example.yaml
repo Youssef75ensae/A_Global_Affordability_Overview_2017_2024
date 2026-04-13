@@ -1,0 +1,13 @@
+# One-off run: kubectl create -f workflow-submit-example.yaml -n affordability
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: affordability-data-pipeline-
+  namespace: affordability
+spec:
+  workflowTemplateRef:
+    name: affordability-data-pipeline
+  arguments:
+    parameters:
+      - name: image
+        value: affordability-pipeline:latest

@@ -26,10 +26,8 @@ jobs:
 
       - name: Run Ingestion (Kaggle -> S3)
         run: |
-          uv run --with click --with duckdb --with kagglehub --with python-dotenv \
-          python src/data/ingest_data.py
+          uv run python src/data/ingest_data.py
 
-      - name: Run Processing (S3 CSV -> S3 Parquet -> Local Parquet)
+      - name: Run Processing (S3 CSV -> S3 Parquet -> S3 processed Parquet)
         run: |
-          uv run --with click --with duckdb --with python-dotenv \
-          python src/data/data_preprocessing.py "s3://${{ env.MY_BUCKET }}/${{ env.CHEMIN_FICHIER }}" 
+          uv run python src/data/data_preprocessing.py

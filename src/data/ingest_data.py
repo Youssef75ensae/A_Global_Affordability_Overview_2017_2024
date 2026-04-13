@@ -40,7 +40,9 @@ def main(dataset):
         return
 
     bucket = os.getenv("MY_BUCKET")
-    s3_key = "raw/price_of_healthy_diet_clean.csv"
+    s3_key = os.getenv(
+        "CHEMIN_FICHIER", "data/price_of_healthy_diet_clean.csv"
+    )
 
     upload_to_s3(files[0], bucket, s3_key)
 

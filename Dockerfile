@@ -1,17 +1,21 @@
-FROM ubuntu:22.04
+# Pipeline image for Kaggle ingest + DuckDB preprocessing (Argo Workflows / local).
+FROM python:3.13-slim-bookworm
 
-# Install Python
-RUN apt-get -y update && \
-    apt-get install -y python3-pip curl
+WORKDIR /app
 
-# Install uv
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin/:$PATH"
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install project dependencies
-COPY pyproject.toml .
-RUN uv sync
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY main.py .
+COPY pyproject.toml uv.lock ./
 COPY src ./src
-CMD ["uv", "run", "main.py"]
+
+RUN uv sync --frozen --no-dev
+
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+# Scripts expect repo root as CWD (imports `utils` from src/data/).
+WORKDIR /app
